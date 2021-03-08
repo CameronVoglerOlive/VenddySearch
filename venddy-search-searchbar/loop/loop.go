@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -13,7 +14,7 @@ import (
 
 // Serve creates the new loop and tells the LDK to serve it
 func Serve() error {
-	logger := ldk.NewLogger("example-search-searchbar")
+	logger := ldk.NewLogger("venddy-search-searchbar")
 	loop, err := NewLoop(logger)
 	if err != nil {
 		return err
@@ -39,10 +40,12 @@ func NewLoop(logger *ldk.Logger) (*Loop, error) {
 }
 
 var client = &http.Client{Timeout: 10 * time.Second}
+var searchLimit = 5
+var cursor = 0
 
 // LoopStart is called by the host when the loop is started to provide access to the host process
 func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
-	l.logger.Info("starting example loop")
+	l.logger.Info("starting venddy search")
 	l.ctx, l.cancel = context.WithCancel(context.Background())
 
 	l.sidekick = sidekick
@@ -55,7 +58,9 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 		}
 
 		go func() {
-			req, err := http.NewRequest("GET", `https://venddy.com/api/1.1/obj/vendor?constraints=[{"key":"searchfield", "constraint_type":"text contains", "value":"`+text+`"}]&limit=5`, nil)
+			req, err := http.NewRequest("GET",
+				fmt.Sprintf(`https://venddy.com/api/1.1/obj/vendor?constraints=[{"key":"searchfield", "constraint_type":"text contains", "value":"%v" }]&sort_field=Score&descending=true&limit=%v&cursor=%v`,
+					text, searchLimit, cursor), nil)
 			if err != nil {
 				log.Fatalln(err)
 			}
@@ -80,166 +85,60 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 				log.Fatalln(er.Error())
 			}
 
-			// errJson := json.Unmarshal(bodyBytes, &dataMap)
-			// var displayError string
-			// if errJson != nil {
-			// 	displayError = errJson.Error()
-			// } else {
-			// 	displayError = "no errors"
-			// }
-			// response, ok := dataMap["response"].(map[string]interface{})["results"]
-			// fmt.Println(response)
-			// bodyString := string(bodyBytes)
-			// "\r\n Name: " + venddyResponse.Response.Results[0].Name +
-			// 		"\r\n Description: " + venddyResponse.Response.Results[0].Description +
-			// 		"\r\n Website: " + venddyResponse.Response.Results[0].Website +
-			// 		"\r\n Keywords: " + venddyResponse.Response.Results[0].Keywords
-			// template := "Name: " + venddyResponse.Response.Results[0].Name +
-			// 	" Description: " + venddyResponse.Response.Results[0].Description +
-			// 	" Website: " + venddyResponse.Response.Results[0].Website +
-			// 	" Keywords: " + venddyResponse.Response.Results[0].Keywords
-			// imgResp, err := http.NewRequest("GET", venddyResponse.Response.Results[0].Logo, nil)
-			// if err != nil {
-			// 	log.Fatalln(err)
-			// }
-			// defer imgResp.Body.Close()
-			// file, err := os.Create("/tmp/venImag.png")
-			// if err != nil {
-			// 	log.Fatalln(err)
-			// }
-			// defer file.Close()
-			// _, err = io.Copy(file, imgResp.Body)
-			// if err != nil {
-			// 	log.Fatalln(err)
-			// }
+			listElements := make(map[string]ldk.WhisperContentListElement)
 
-			// var test map[string]ldk.WhisperContentListElement
+			if len(venddyResponse.Response.Results) > 0 {
+				for i := range venddyResponse.Response.Results {
+					isExtra := i != 0
+					listElements[fmt.Sprintf("%v", i)] = &ldk.WhisperContentListElementLink{
+						Extra: isExtra,
+						Align: ldk.WhisperContentListElementAlignLeft,
+						Href:  venddyResponse.Response.Results[i].Website,
+						Order: uint32(i),
+						Style: ldk.WhisperContentListElementStyleNone,
+						Text:  venddyResponse.Response.Results[i].Name,
+					}
 
-			// testStr := ""
+					listElements[fmt.Sprintf("a_%v", i)] = &ldk.WhisperContentListElementPair{
+						Label: "Rating",
+						Order: uint32(i),
+						Extra: isExtra,
+						Value: fmt.Sprintf("%v", venddyResponse.Response.Results[i].Score),
+					}
 
-			// for i, val := range venddyResponse.Response.Results {
-			// 	testStr += string(i)
-			// 	test[string(i)+"link"] = &ldk.WhisperContentListElementLink{
-			// 		Align: ldk.WhisperContentListElementAlignLeft,
-			// 		Href:  val.Website,
-			// 		Order: uint32(i),
-			// 		Style: ldk.WhisperContentListElementStyleNone,
-			// 		Text:  val.Name,
-			// 	}
+					listElements[fmt.Sprintf("b_%v", i)] = &ldk.WhisperContentListElementPair{
+						Label: "Reivews",
+						Order: uint32(i),
+						Extra: isExtra,
+						Value: fmt.Sprintf("%v", venddyResponse.Response.Results[i].ReviewCount),
+					}
 
-			// 	test[string(i)+"topMessage"] = &ldk.WhisperContentListElementMessage{
-			// 		Style:  ldk.WhisperContentListElementStyleNone,
-			// 		Header: val.Keywords,
-			// 		Body:   val.Description,
-			// 		Align:  ldk.WhisperContentListElementAlignLeft,
-			// 		Order:  uint32(i + 1),
-			// 	}
+					listElements[fmt.Sprintf("c_%v", i)] = &ldk.WhisperContentListElementMessage{
+						Style:  ldk.WhisperContentListElementStyleNone,
+						Header: venddyResponse.Response.Results[i].Keywords,
+						Body:   venddyResponse.Response.Results[i].Description,
+						Align:  ldk.WhisperContentListElementAlignLeft,
+						Order:  uint32(i),
+						Extra:  isExtra,
+					}
 
-			// 	test[string(i)+"sectionDivider"] = &ldk.WhisperContentListElementDivider{
-			// 		Order: uint32(i + 2),
-			// 	}
-			// }
+					listElements[fmt.Sprintf("d_%v", i)] = &ldk.WhisperContentListElementDivider{
+						Order: uint32(i),
+						Extra: isExtra,
+					}
+				}
 
-			testing := map[string]ldk.WhisperContentListElement{
-				"link": &ldk.WhisperContentListElementLink{
-					Align: ldk.WhisperContentListElementAlignLeft,
-					Href:  venddyResponse.Response.Results[0].Website,
-					Order: 0,
-					Style: ldk.WhisperContentListElementStyleNone,
-					Text:  venddyResponse.Response.Results[0].Name,
-				},
-				"topMessage": &ldk.WhisperContentListElementMessage{
-					Style:  ldk.WhisperContentListElementStyleNone,
-					Header: venddyResponse.Response.Results[0].Keywords,
-					Body:   venddyResponse.Response.Results[0].Description,
-					Align:  ldk.WhisperContentListElementAlignLeft,
-					Order:  1,
-				},
-				"sectionDivider": &ldk.WhisperContentListElementDivider{
-					Order: 2,
-				},
-				"link2": &ldk.WhisperContentListElementLink{
-					Align: ldk.WhisperContentListElementAlignLeft,
-					Href:  venddyResponse.Response.Results[1].Website,
-					Order: 3,
-					Extra: true,
-					Style: ldk.WhisperContentListElementStyleNone,
-					Text:  venddyResponse.Response.Results[1].Name,
-				},
-				"topMessage2": &ldk.WhisperContentListElementMessage{
-					Style:  ldk.WhisperContentListElementStyleNone,
-					Header: venddyResponse.Response.Results[1].Keywords,
-					Body:   venddyResponse.Response.Results[1].Description,
-					Align:  ldk.WhisperContentListElementAlignLeft,
-					Extra:  true,
-					Order:  4,
-				},
-				"sectionDivider2": &ldk.WhisperContentListElementDivider{
-					Extra: true,
-					Order: 5,
-				},
-				"link3": &ldk.WhisperContentListElementLink{
-					Align: ldk.WhisperContentListElementAlignLeft,
-					Href:  venddyResponse.Response.Results[2].Website,
-					Order: 6,
-					Extra: true,
-					Style: ldk.WhisperContentListElementStyleNone,
-					Text:  venddyResponse.Response.Results[2].Name,
-				},
-				"topMessage3": &ldk.WhisperContentListElementMessage{
-					Style:  ldk.WhisperContentListElementStyleNone,
-					Header: venddyResponse.Response.Results[2].Keywords,
-					Body:   venddyResponse.Response.Results[2].Description,
-					Align:  ldk.WhisperContentListElementAlignLeft,
-					Extra:  true,
-					Order:  7,
-				},
-				"sectionDivider3": &ldk.WhisperContentListElementDivider{
-					Extra: true,
-					Order: 8,
-				},
-				"link4": &ldk.WhisperContentListElementLink{
-					Align: ldk.WhisperContentListElementAlignLeft,
-					Href:  venddyResponse.Response.Results[3].Website,
-					Order: 9,
-					Extra: true,
-					Style: ldk.WhisperContentListElementStyleNone,
-					Text:  venddyResponse.Response.Results[3].Name,
-				},
-				"topMessage4": &ldk.WhisperContentListElementMessage{
-					Style:  ldk.WhisperContentListElementStyleNone,
-					Header: venddyResponse.Response.Results[3].Keywords,
-					Body:   venddyResponse.Response.Results[3].Description,
-					Align:  ldk.WhisperContentListElementAlignLeft,
-					Extra:  true,
-					Order:  10,
-				},
-				"sectionDivider4": &ldk.WhisperContentListElementDivider{
-					Extra: true,
-					Order: 11,
-				},
-				"link5": &ldk.WhisperContentListElementLink{
-					Align: ldk.WhisperContentListElementAlignLeft,
-					Href:  venddyResponse.Response.Results[4].Website,
-					Order: 12,
-					Extra: true,
-					Style: ldk.WhisperContentListElementStyleNone,
-					Text:  venddyResponse.Response.Results[4].Name,
-				},
-				"topMessage5": &ldk.WhisperContentListElementMessage{
-					Style:  ldk.WhisperContentListElementStyleNone,
-					Header: venddyResponse.Response.Results[4].Keywords,
-					Body:   venddyResponse.Response.Results[4].Description,
-					Align:  ldk.WhisperContentListElementAlignLeft,
-					Extra:  true,
-					Order:  13,
-				},
+				err = l.sidekick.Whisper().List(l.ctx, &ldk.WhisperContentList{
+					Label:    fmt.Sprintf("Venddy Search Results for %v", text),
+					Elements: listElements,
+				})
+			} else {
+				err = l.sidekick.Whisper().Markdown(l.ctx, &ldk.WhisperContentMarkdown{
+					Label:    fmt.Sprintf("Venddy Search Results for %v", text),
+					Markdown: fmt.Sprintf("%v didn't return any results, try another seach", text),
+				})
 			}
 
-			err = l.sidekick.Whisper().List(l.ctx, &ldk.WhisperContentList{
-				Label:    "Venddy Search Results for " + text,
-				Elements: testing,
-			})
 			if err != nil {
 				l.logger.Error("failed to emit whisper", "error", err)
 				return
@@ -253,27 +152,21 @@ type VenddyResponse struct {
 }
 
 type Response struct {
-	Results []VenddyResults `json:Results`
+	Results   []VenddyResults `json:"results"`
+	Cursor    int             `json:"Cursor"`
+	Remaining int             `json:"Remaining"`
+	Count     int             `json:"Count"`
 }
 
 type VenddyResults struct {
-	Website     string `json:"Website"`
-	Description string `json:"Description"`
-	Name        string `json:"Name"`
-	Logo        string `json:"Logo"`
-	Keywords    string `json:"Search field"`
+	Website     string  `json:"Website"`
+	Description string  `json:"Description"`
+	Name        string  `json:"Name"`
+	Logo        string  `json:"Logo"`
+	Keywords    string  `json:"Search field"`
+	Score       float64 `json:"Score"`
+	ReviewCount float64 `json:"Number of Reviews"`
 }
-
-// type VenddyResponse struct {
-// 	response struct {
-// 		results []struct {
-// 			Website    string `json:"Website"`
-// 			Descrition string `json:"Description"`
-// 			Name       string `json:"Name"`
-// 			Logo       string `json:"Logo"`
-// 		} `json:"results"`
-// 	} `json:"response"`
-// }
 
 // LoopStop is called by the host when the loop is stopped
 func (l *Loop) LoopStop() error {
