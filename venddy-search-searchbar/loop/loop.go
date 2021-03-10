@@ -58,7 +58,7 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 		}
 
 		go func() {
-			resp, err := GetVenddySearchResults(text, searchLimit, cursor)
+			resp, err := l.GetVendorSearch(text, searchLimit, cursor)
 			if err != nil {
 				log.Fatalln(err)
 			}
@@ -69,17 +69,20 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 				log.Fatalln(err)
 			}
 
-			venddyResponse := VenddyResponse{}
+			venddy := Venddy{}
 
-			er := json.Unmarshal(bodyBytes, &venddyResponse)
+			er := json.Unmarshal(bodyBytes, &venddy)
 			if er != nil {
 				log.Fatalln(er.Error())
 			}
 
+			venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
+			venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+
 			go func() {
 				_, err := l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
 					Label:    "Venddy Search",
-					Elements: l.CreateDisambiguationElements(venddyResponse.Response, text),
+					Elements: l.CreateDisambiguationElements(venddy.Response, text),
 				})
 				if err != nil {
 					l.logger.Error("failed to emit whisper", "error", err)
@@ -89,20 +92,26 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 	})
 }
 
-func (l *Loop) CreateDisambiguationElements(response Response, text string) map[string]ldk.WhisperContentDisambiguationElement {
+func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string) map[string]ldk.WhisperContentDisambiguationElement {
 	elements := make(map[string]ldk.WhisperContentDisambiguationElement)
 
 	for i := range response.Results {
 		item := response.Results[i]
 		elements[fmt.Sprintf("%v", i)] = &ldk.WhisperContentDisambiguationElementOption{
-			Label: item.Name,
+			Label: fmt.Sprintf("%v ~ Rating:%.0f ~ Reviews:%.0f", item.Name, item.Score, item.ReviewCount),
 			Order: uint32(i) + 1,
 			OnChange: func(key string) {
 				go func() {
-					err := l.sidekick.Whisper().List(l.ctx, &ldk.WhisperContentList{
-						Label:    item.Name,
-						Elements: CreateListElements(item),
+					err := l.sidekick.Whisper().Markdown(l.ctx, &ldk.WhisperContentMarkdown{
+						Label: item.Name,
+						Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, item.Logo, item.Website) +
+							"\n>" + item.Description + "\n" +
+							"\n# Categories:\n" + item.CategoryNames +
+							"\n# Classes:\n" + item.ClassNames +
+							"\n# Score: " + fmt.Sprintf("%.0f", item.Score) +
+							"\n# Reviews: " + fmt.Sprintf("%.0f", item.ReviewCount),
 					})
+
 					if err != nil {
 						log.Fatalln(err)
 					}
@@ -127,7 +136,7 @@ func (l *Loop) CreateDisambiguationElements(response Response, text string) map[
 			OnChange: func(key string) {
 				go func() {
 					cursor += searchLimit
-					resp, err := GetVenddySearchResults(text, searchLimit, cursor)
+					resp, err := l.GetVendorSearch(text, searchLimit, cursor)
 					if err != nil {
 						log.Fatalln(err)
 					}
@@ -138,15 +147,15 @@ func (l *Loop) CreateDisambiguationElements(response Response, text string) map[
 						log.Fatalln(err)
 					}
 
-					venddyResponse := VenddyResponse{}
+					venddy := Venddy{}
 
-					er := json.Unmarshal(bodyBytes, &venddyResponse)
+					er := json.Unmarshal(bodyBytes, &venddy)
 					if er != nil {
 						log.Fatalln(er.Error())
 					}
 					_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
 						Label:    "Venddy Search",
-						Elements: l.CreateDisambiguationElements(venddyResponse.Response, text),
+						Elements: l.CreateDisambiguationElements(venddy.Response, text),
 					})
 				}()
 			},
@@ -160,26 +169,26 @@ func (l *Loop) CreateDisambiguationElements(response Response, text string) map[
 			OnChange: func(key string) {
 				go func() {
 					cursor -= searchLimit
-					resp, err := GetVenddySearchResults(text, searchLimit, cursor)
+					resp, err := l.GetVendorSearch(text, searchLimit, cursor)
 					if err != nil {
-						log.Fatalln(err)
+						l.logger.Error("GetVendorSearch failed", err)
 					}
 					defer resp.Body.Close()
 
 					bodyBytes, err := ioutil.ReadAll(resp.Body)
 					if err != nil {
-						log.Fatalln(err)
+						l.logger.Error("ioutil.ReadAll failed", err)
 					}
 
-					venddyResponse := VenddyResponse{}
+					venddy := Venddy{}
 
-					er := json.Unmarshal(bodyBytes, &venddyResponse)
+					er := json.Unmarshal(bodyBytes, &venddy)
 					if er != nil {
-						log.Fatalln(er.Error())
+						l.logger.Error("json.Unmarshal failed", err)
 					}
 					_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
 						Label:    "Venddy Search",
-						Elements: l.CreateDisambiguationElements(venddyResponse.Response, text),
+						Elements: l.CreateDisambiguationElements(venddy.Response, text),
 					})
 				}()
 			},
@@ -222,12 +231,12 @@ func CreateListElements(result VenddyResult) map[string]ldk.WhisperContentListEl
 	return elements
 }
 
-func GetVenddySearchResults(text string, max int, startAt int) (*http.Response, error) {
+func (l *Loop) GetVendorSearch(vendor string, max int, startAt int) (*http.Response, error) {
 	req, err := http.NewRequest("GET",
 		fmt.Sprintf(`https://venddy.com/api/1.1/obj/vendor?constraints=[{"key":"searchfield", "constraint_type":"text contains", "value":"%v" }]&sort_field=Score&descending=true&limit=%v&cursor=%v`,
-			text, max, startAt), nil)
+			vendor, max, startAt), nil)
 	if err != nil {
-		log.Fatalln(err)
+		l.logger.Error("Vendor GET failed", err)
 	}
 	q := req.URL.Query()
 	req.URL.RawQuery = q.Encode()
@@ -235,11 +244,67 @@ func GetVenddySearchResults(text string, max int, startAt int) (*http.Response, 
 	return client.Do(req)
 }
 
-type VenddyResponse struct {
-	Response Response `json:"response"`
+func (l *Loop) GetVenddyCategoryNames(results []VenddyResult) []VenddyResult {
+	venddyCategories := Venddy{}
+	resp, err := l.sidekick.Network().HTTPRequest(l.ctx, &ldk.HTTPRequest{
+		URL:    "https://venddy.com/api/1.1/obj/category",
+		Method: "GET",
+		Body:   nil,
+	})
+	if err != nil {
+		l.logger.Error("Category GET failed", err)
+	}
+
+	err = json.Unmarshal(resp.Data, &venddyCategories)
+	if err != nil {
+		l.logger.Error("JSON Unmarshal failed", err)
+	}
+
+	for i := range venddyCategories.Response.Results {
+		for in := range results {
+			for ind := range results[in].Categories {
+				if venddyCategories.Response.Results[i].Id == results[in].Categories[ind] {
+					results[in].CategoryNames += "- " + venddyCategories.Response.Results[i].Name + "\n"
+				}
+			}
+		}
+	}
+	return results
 }
 
-type Response struct {
+func (l *Loop) GetVenddyClassNames(results []VenddyResult) []VenddyResult {
+	venddyClasses := Venddy{}
+	resp, err := l.sidekick.Network().HTTPRequest(l.ctx, &ldk.HTTPRequest{
+		URL:    "https://venddy.com/api/1.1/obj/class",
+		Method: "GET",
+		Body:   nil,
+	})
+	if err != nil {
+		l.logger.Error("Class GET failed", err)
+	}
+
+	err = json.Unmarshal(resp.Data, &venddyClasses)
+	if err != nil {
+		l.logger.Error("JSON Unmarshal failed", err)
+	}
+
+	for i := range venddyClasses.Response.Results {
+		for in := range results {
+			for ind := range results[in].Classes {
+				if venddyClasses.Response.Results[i].Id == results[in].Classes[ind] {
+					results[in].ClassNames += "- " + venddyClasses.Response.Results[i].Name + "\n"
+				}
+			}
+		}
+	}
+	return results
+}
+
+type Venddy struct {
+	Response VenddyResponse `json:"response"`
+}
+
+type VenddyResponse struct {
 	Results   []VenddyResult `json:"results"`
 	Cursor    int            `json:"Cursor"`
 	Remaining int            `json:"Remaining"`
@@ -247,14 +312,19 @@ type Response struct {
 }
 
 type VenddyResult struct {
-	Id          string  `json:"_id"`
-	Website     string  `json:"Website"`
-	Description string  `json:"Description"`
-	Name        string  `json:"Name"`
-	Logo        string  `json:"Logo"`
-	Keywords    string  `json:"Search field"`
-	Score       float64 `json:"Score"`
-	ReviewCount float64 `json:"Number of Reviews"`
+	Id            string   `json:"_id"`
+	Website       string   `json:"Website"`
+	Description   string   `json:"Description"`
+	Name          string   `json:"Name"`
+	Logo          string   `json:"Logo"`
+	Keywords      string   `json:"Search field"`
+	Categories    []string `json:"Categories"`
+	CategoryNames string
+	Classes       []string `json:"Classes"`
+	ClassNames    string
+	Subcategories []string `json:"Subcategories"`
+	Score         float64  `json:"Score"`
+	ReviewCount   float64  `json:"Number of Reviews"`
 }
 
 // LoopStop is called by the host when the loop is stopped
