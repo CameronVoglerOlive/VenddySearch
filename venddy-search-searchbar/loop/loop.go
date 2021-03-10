@@ -107,9 +107,7 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 						Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, item.Logo, item.Website) +
 							"\n>" + item.Description + "\n" +
 							"\n# Categories:\n" + item.CategoryNames +
-							"\n# Classes:\n" + item.ClassNames +
-							"\n# Score: " + fmt.Sprintf("%.0f", item.Score) +
-							"\n# Reviews: " + fmt.Sprintf("%.0f", item.ReviewCount),
+							"\n# Classes:\n" + item.ClassNames,
 					})
 
 					if err != nil {
