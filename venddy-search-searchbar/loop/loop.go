@@ -78,6 +78,7 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 
 			venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
 			venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+			venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
 
 			go func() {
 				_, err := l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
@@ -108,7 +109,8 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 							"\n" + fmt.Sprintf(`__[%v](%v)__`, item.Website, item.Website) + "\n" +
 							"\n>" + item.Description + "\n" +
 							"\n# Classes:\n" + item.ClassNames +
-							"\n# Categories:\n" + item.CategoryNames,
+							"\n# Categories:\n" + item.CategoryNames +
+							"\n# Subcategories:\n" + item.SubcategoryNames,
 					})
 
 					if err != nil {
@@ -317,7 +319,7 @@ func (l *Loop) GetVenddySubcategoryNames(results []VenddyResult) []VenddyResult 
 
 	venddySubcategories2 := Venddy{}
 	resp2, err := l.sidekick.Network().HTTPRequest(l.ctx, &ldk.HTTPRequest{
-		URL:    "https://venddy.com/api/1.1/obj/subcategory",
+		URL:    "https://venddy.com/api/1.1/obj/subcategory?cursor=100",
 		Method: "GET",
 		Body:   nil,
 	})
@@ -377,6 +379,8 @@ type VenddyResult struct {
 	ClassNames       string
 	Subcategories    []string `json:"Subcategories"`
 	SubcategoryNames string
+	Types            []string `json:"Types"`
+	TypeNames        string
 	Score            float64 `json:"Score"`
 	ReviewCount      float64 `json:"Number of Reviews"`
 }
