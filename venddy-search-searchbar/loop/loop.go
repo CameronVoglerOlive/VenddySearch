@@ -105,13 +105,14 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 					err := l.sidekick.Whisper().Markdown(l.ctx, &ldk.WhisperContentMarkdown{
 						Label: item.Name,
 						Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, item.Logo, item.Website) +
+							"\n" + fmt.Sprintf(`__[%v](%v)__`, item.Website, item.Website) + "\n" +
 							"\n>" + item.Description + "\n" +
 							"\n# Categories:\n" + item.CategoryNames +
 							"\n# Classes:\n" + item.ClassNames,
 					})
 
 					if err != nil {
-						log.Fatalln(err)
+						l.logger.Error("Whisper().Markdown() failed", err)
 					}
 				}()
 			},
@@ -136,20 +137,20 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 					cursor += searchLimit
 					resp, err := l.GetVendorSearch(text, searchLimit, cursor)
 					if err != nil {
-						log.Fatalln(err)
+						l.logger.Error("GetVendorSearch failed", err)
 					}
 					defer resp.Body.Close()
 
 					bodyBytes, err := ioutil.ReadAll(resp.Body)
 					if err != nil {
-						log.Fatalln(err)
+						l.logger.Error("ioutil.ReadAll failed", err)
 					}
 
 					venddy := Venddy{}
 
-					er := json.Unmarshal(bodyBytes, &venddy)
-					if er != nil {
-						log.Fatalln(er.Error())
+					err = json.Unmarshal(bodyBytes, &venddy)
+					if err != nil {
+						l.logger.Error("json.Unmarshal failed", err)
 					}
 					_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
 						Label:    "Venddy Search",
