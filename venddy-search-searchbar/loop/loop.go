@@ -107,8 +107,8 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 						Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, item.Logo, item.Website) +
 							"\n" + fmt.Sprintf(`__[%v](%v)__`, item.Website, item.Website) + "\n" +
 							"\n>" + item.Description + "\n" +
-							"\n# Categories:\n" + item.CategoryNames +
-							"\n# Classes:\n" + item.ClassNames,
+							"\n# Classes:\n" + item.ClassNames +
+							"\n# Categories:\n" + item.CategoryNames,
 					})
 
 					if err != nil {
@@ -299,6 +299,60 @@ func (l *Loop) GetVenddyClassNames(results []VenddyResult) []VenddyResult {
 	return results
 }
 
+func (l *Loop) GetVenddySubcategoryNames(results []VenddyResult) []VenddyResult {
+	venddySubcategories := Venddy{}
+	resp, err := l.sidekick.Network().HTTPRequest(l.ctx, &ldk.HTTPRequest{
+		URL:    "https://venddy.com/api/1.1/obj/subcategory",
+		Method: "GET",
+		Body:   nil,
+	})
+	if err != nil {
+		l.logger.Error("Subcategory GET failed", err)
+	}
+
+	err = json.Unmarshal(resp.Data, &venddySubcategories)
+	if err != nil {
+		l.logger.Error("JSON Unmarshal failed", err)
+	}
+
+	venddySubcategories2 := Venddy{}
+	resp2, err := l.sidekick.Network().HTTPRequest(l.ctx, &ldk.HTTPRequest{
+		URL:    "https://venddy.com/api/1.1/obj/subcategory",
+		Method: "GET",
+		Body:   nil,
+	})
+	if err != nil {
+		l.logger.Error("Subcategory GET failed", err)
+	}
+
+	err = json.Unmarshal(resp2.Data, &venddySubcategories2)
+	if err != nil {
+		l.logger.Error("JSON Unmarshal failed", err)
+	}
+
+	for i := range venddySubcategories.Response.Results {
+		for in := range results {
+			for ind := range results[in].Subcategories {
+				if venddySubcategories.Response.Results[i].Id == results[in].Subcategories[ind] {
+					results[in].SubcategoryNames += "- " + venddySubcategories.Response.Results[i].Name + "\n"
+				}
+			}
+		}
+	}
+
+	for i := range venddySubcategories2.Response.Results {
+		for in := range results {
+			for ind := range results[in].Subcategories {
+				if venddySubcategories2.Response.Results[i].Id == results[in].Subcategories[ind] {
+					results[in].SubcategoryNames += "- " + venddySubcategories2.Response.Results[i].Name + "\n"
+				}
+			}
+		}
+	}
+
+	return results
+}
+
 type Venddy struct {
 	Response VenddyResponse `json:"response"`
 }
@@ -311,19 +365,20 @@ type VenddyResponse struct {
 }
 
 type VenddyResult struct {
-	Id            string   `json:"_id"`
-	Website       string   `json:"Website"`
-	Description   string   `json:"Description"`
-	Name          string   `json:"Name"`
-	Logo          string   `json:"Logo"`
-	Keywords      string   `json:"Search field"`
-	Categories    []string `json:"Categories"`
-	CategoryNames string
-	Classes       []string `json:"Classes"`
-	ClassNames    string
-	Subcategories []string `json:"Subcategories"`
-	Score         float64  `json:"Score"`
-	ReviewCount   float64  `json:"Number of Reviews"`
+	Id               string   `json:"_id"`
+	Website          string   `json:"Website"`
+	Description      string   `json:"Description"`
+	Name             string   `json:"Name"`
+	Logo             string   `json:"Logo"`
+	Keywords         string   `json:"Search field"`
+	Categories       []string `json:"Categories"`
+	CategoryNames    string
+	Classes          []string `json:"Classes"`
+	ClassNames       string
+	Subcategories    []string `json:"Subcategories"`
+	SubcategoryNames string
+	Score            float64 `json:"Score"`
+	ReviewCount      float64 `json:"Number of Reviews"`
 }
 
 // LoopStop is called by the host when the loop is stopped
