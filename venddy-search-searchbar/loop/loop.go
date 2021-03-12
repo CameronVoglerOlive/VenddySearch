@@ -79,6 +79,7 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 			venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
 			venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
 			venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
+			venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
 
 			go func() {
 				_, err := l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
@@ -103,12 +104,21 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 			Order: uint32(i) + 1,
 			OnChange: func(key string) {
 				go func() {
+					logo := item.Logo
+					if logo == logo[:0] {
+						logo = "https://d1muf25xaso8hp.cloudfront.net/https%3A%2F%2Fs3.amazonaws.com%2Fappforest_uf%2Ff1531944633470x300479865865781900%2FDefault%2520Logo.png?w=256&h=256&auto=compress&dpr=1&fit=max"
+					}
+
+					if logo[:1] != "h" {
+						logo = fmt.Sprintf("https://d1muf25xaso8hp.cloudfront.net/http:%v", logo)
+					}
+
 					err := l.sidekick.Whisper().Markdown(l.ctx, &ldk.WhisperContentMarkdown{
 						Label: item.Name,
-						Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, item.Logo, item.Website) +
-							"\n" + fmt.Sprintf(`__[%v](%v)__`, item.Website, item.Website) + "\n" +
-							"\n>" + item.Description + "\n" +
+						Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, logo, item.Website) +
+							"\n_" + item.Description + "_\n" +
 							"\n# Classes:\n" + item.ClassNames +
+							"\n# Types:\n" + item.TypeNames +
 							"\n# Categories:\n" + item.CategoryNames +
 							"\n# Subcategories:\n" + item.SubcategoryNames,
 					})
@@ -352,6 +362,34 @@ func (l *Loop) GetVenddySubcategoryNames(results []VenddyResult) []VenddyResult 
 		}
 	}
 
+	return results
+}
+
+func (l *Loop) GetVenddyTypeNames(results []VenddyResult) []VenddyResult {
+	venddyTypes := Venddy{}
+	resp, err := l.sidekick.Network().HTTPRequest(l.ctx, &ldk.HTTPRequest{
+		URL:    "https://venddy.com/api/1.1/obj/solutionType",
+		Method: "GET",
+		Body:   nil,
+	})
+	if err != nil {
+		l.logger.Error("Type GET failed", err)
+	}
+
+	err = json.Unmarshal(resp.Data, &venddyTypes)
+	if err != nil {
+		l.logger.Error("JSON Unmarshal failed", err)
+	}
+
+	for i := range venddyTypes.Response.Results {
+		for in := range results {
+			for ind := range results[in].Types {
+				if venddyTypes.Response.Results[i].Id == results[in].Types[ind] {
+					results[in].TypeNames += "- " + venddyTypes.Response.Results[i].Name + "\n"
+				}
+			}
+		}
+	}
 	return results
 }
 
