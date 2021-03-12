@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	ldk "github.com/open-olive/loop-development-kit/ldk/go"
@@ -120,7 +121,8 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 							"\n# Classes:\n" + item.ClassNames +
 							"\n# Types:\n" + item.TypeNames +
 							"\n# Categories:\n" + item.CategoryNames +
-							"\n# Subcategories:\n" + item.SubcategoryNames,
+							"\n# Subcategories:\n" + item.SubcategoryNames +
+							"\n\n " + fmt.Sprintf("# [View on Venddy](https://venddy.com/vendorprofile/%v)", item.Id),
 					})
 
 					if err != nil {
@@ -136,8 +138,13 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 		Order: 0,
 	}
 	elements["header2"] = &ldk.WhisperContentDisambiguationElementText{
-		Body:  fmt.Sprintf("Remaining Results: %v", response.Remaining),
+		Body:  fmt.Sprintf("# Remaining Results: %v", response.Remaining),
 		Order: uint32(len(response.Results)) + 2,
+	}
+	venddyText := strings.ReplaceAll(text, " ", "+")
+	elements["viewOnVenddy"] = &ldk.WhisperContentDisambiguationElementText{
+		Body:  fmt.Sprintf("# [View on Venddy](https://venddy.com/searchvendor?keyword=%v)", venddyText),
+		Order: uint32(len(response.Results)) + 5,
 	}
 
 	if response.Remaining > 0 {
