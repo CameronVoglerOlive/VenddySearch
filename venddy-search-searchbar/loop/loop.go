@@ -164,6 +164,12 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 					if err != nil {
 						l.logger.Error("json.Unmarshal failed", err)
 					}
+
+					venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
+
 					_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
 						Label:    "Venddy Search",
 						Elements: l.CreateDisambiguationElements(venddy.Response, text),
@@ -197,6 +203,12 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 					if er != nil {
 						l.logger.Error("json.Unmarshal failed", err)
 					}
+
+					venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
+
 					_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
 						Label:    "Venddy Search",
 						Elements: l.CreateDisambiguationElements(venddy.Response, text),
