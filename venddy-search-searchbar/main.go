@@ -1,7 +1,7 @@
 package main
 
 import (
-	loop "github.com/open-olive/loop-development-kit/ldk/go/examples/search-searchbar/loop"
+	loop "github.com/cameronvoglerolive/venddysearch/venddy-search-searchbar/loop"
 )
 
 func main() {

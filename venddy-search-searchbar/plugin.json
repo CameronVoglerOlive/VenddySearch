@@ -2,11 +2,11 @@
   "author": "Olive",
   "created": "2020-06-22T00:00:00Z",
   "dependencies": [],
-  "description": "This is an example loop written in Go.",
+  "description": "Search for healthcare products and services by keyword.",
   "id": "9e9eeb9c-fa4d-471a-8778-088bdb077f97",
-  "name": "Example Go",
+  "name": "Healthcare Vendor Search by Venddy",
   "organization": "OliveAI",
   "specification": "1",
   "updated": "2020-07-23T00:00:00Z",
-  "version": "1.1.0"
+  "version": "1.0.0"
 }

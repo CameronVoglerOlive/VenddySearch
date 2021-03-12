@@ -1,4 +1,4 @@
-module github.com/open-olive/loop-development-kit/ldk/go/examples/search-searchbar
+module github.com/cameronvoglerolive/venddysearch/venddy-search-searchbar
 
 go 1.14
 
