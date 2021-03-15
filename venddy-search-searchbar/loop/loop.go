@@ -59,6 +59,7 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 		}
 
 		go func() {
+			cursor = 0
 			resp, err := l.GetVendorSearch(text, searchLimit, cursor)
 			if err != nil {
 				log.Fatalln(err)
@@ -98,130 +99,137 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string) map[string]ldk.WhisperContentDisambiguationElement {
 	elements := make(map[string]ldk.WhisperContentDisambiguationElement)
 
-	for i := range response.Results {
-		item := response.Results[i]
-		elements[fmt.Sprintf("%v", i)] = &ldk.WhisperContentDisambiguationElementOption{
-			Label: fmt.Sprintf("%v ~ Rating:%.0f ~ Reviews:%.0f", item.Name, item.Score, item.ReviewCount),
-			Order: uint32(i) + 1,
-			OnChange: func(key string) {
-				go func() {
-					logo := item.Logo
-					if logo == logo[:0] {
-						logo = "https://d1muf25xaso8hp.cloudfront.net/https%3A%2F%2Fs3.amazonaws.com%2Fappforest_uf%2Ff1531944633470x300479865865781900%2FDefault%2520Logo.png?w=256&h=256&auto=compress&dpr=1&fit=max"
-					}
+	if len(response.Results) > 0 {
+		for i := range response.Results {
+			item := response.Results[i]
+			elements[fmt.Sprintf("%v", i)] = &ldk.WhisperContentDisambiguationElementOption{
+				Label: fmt.Sprintf("%v ~ Rating:%.0f ~ Reviews:%.0f", item.Name, item.Score, item.ReviewCount),
+				Order: uint32(i) + 1,
+				OnChange: func(key string) {
+					go func() {
+						logo := item.Logo
+						if logo == logo[:0] {
+							logo = "https://d1muf25xaso8hp.cloudfront.net/https%3A%2F%2Fs3.amazonaws.com%2Fappforest_uf%2Ff1531944633470x300479865865781900%2FDefault%2520Logo.png?w=256&h=256&auto=compress&dpr=1&fit=max"
+						}
 
-					if logo[:1] != "h" {
-						logo = fmt.Sprintf("https://d1muf25xaso8hp.cloudfront.net/http:%v", logo)
-					}
+						if logo[:1] != "h" {
+							logo = fmt.Sprintf("https://d1muf25xaso8hp.cloudfront.net/http:%v", logo)
+						}
 
-					err := l.sidekick.Whisper().Markdown(l.ctx, &ldk.WhisperContentMarkdown{
-						Label: item.Name,
-						Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, logo, item.Website) +
-							"\n_" + item.Description + "_\n" +
-							"\n# Classes:\n" + item.ClassNames +
-							"\n# Types:\n" + item.TypeNames +
-							"\n# Categories:\n" + item.CategoryNames +
-							"\n# Subcategories:\n" + item.SubcategoryNames +
-							"\n\n " + fmt.Sprintf("# [View on Venddy](https://venddy.com/vendorprofile/%v)", item.Id),
-					})
+						err := l.sidekick.Whisper().Markdown(l.ctx, &ldk.WhisperContentMarkdown{
+							Label: item.Name,
+							Markdown: fmt.Sprintf(`[![Logo not found](%v)](%v) `, logo, item.Website) +
+								"\n_" + item.Description + "_\n" +
+								"\n# Classes:\n" + item.ClassNames +
+								"\n# Types:\n" + item.TypeNames +
+								"\n# Categories:\n" + item.CategoryNames +
+								"\n# Subcategories:\n" + item.SubcategoryNames +
+								"\n\n " + fmt.Sprintf("[View on Venddy](https://venddy.com/vendorprofile/%v)", item.Id),
+						})
 
-					if err != nil {
-						l.logger.Error("Whisper().Markdown() failed", err)
-					}
-				}()
-			},
+						if err != nil {
+							l.logger.Error("Whisper().Markdown() failed", err)
+						}
+					}()
+				},
+			}
 		}
-	}
 
-	elements["header1"] = &ldk.WhisperContentDisambiguationElementText{
-		Body:  fmt.Sprintf("# Results for %v:", text),
-		Order: 0,
-	}
-	elements["header2"] = &ldk.WhisperContentDisambiguationElementText{
-		Body:  fmt.Sprintf("# Remaining Results: %v", response.Remaining),
-		Order: uint32(len(response.Results)) + 2,
-	}
-	venddyText := strings.ReplaceAll(text, " ", "+")
-	elements["viewOnVenddy"] = &ldk.WhisperContentDisambiguationElementText{
-		Body:  fmt.Sprintf("# [View on Venddy](https://venddy.com/searchvendor?keyword=%v)", venddyText),
-		Order: uint32(len(response.Results)) + 5,
-	}
-
-	if response.Remaining > 0 {
-		elements["next"] = &ldk.WhisperContentDisambiguationElementOption{
-			Label: fmt.Sprintf("next %v results", searchLimit),
-			Order: uint32(len(response.Results)) + 3,
-			OnChange: func(key string) {
-				go func() {
-					cursor += searchLimit
-					resp, err := l.GetVendorSearch(text, searchLimit, cursor)
-					if err != nil {
-						l.logger.Error("GetVendorSearch failed", err)
-					}
-					defer resp.Body.Close()
-
-					bodyBytes, err := ioutil.ReadAll(resp.Body)
-					if err != nil {
-						l.logger.Error("ioutil.ReadAll failed", err)
-					}
-
-					venddy := Venddy{}
-
-					err = json.Unmarshal(bodyBytes, &venddy)
-					if err != nil {
-						l.logger.Error("json.Unmarshal failed", err)
-					}
-
-					venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
-					venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
-					venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
-					venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
-
-					_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
-						Label:    "Venddy Search",
-						Elements: l.CreateDisambiguationElements(venddy.Response, text),
-					})
-				}()
-			},
+		elements["header1"] = &ldk.WhisperContentDisambiguationElementText{
+			Body:  fmt.Sprintf("# Results for %v:", text),
+			Order: 0,
 		}
-	}
+		elements["header2"] = &ldk.WhisperContentDisambiguationElementText{
+			Body:  fmt.Sprintf("# Remaining Results: %v", response.Remaining),
+			Order: uint32(len(response.Results)) + 2,
+		}
+		venddyText := strings.ReplaceAll(text, " ", "+")
+		elements["viewOnVenddy"] = &ldk.WhisperContentDisambiguationElementText{
+			Body:  fmt.Sprintf("https://venddy.com/searchvendor?keyword=%v", venddyText),
+			Order: uint32(len(response.Results)) + 5,
+		}
 
-	if cursor > 0 {
-		elements["prev"] = &ldk.WhisperContentDisambiguationElementOption{
-			Label: fmt.Sprintf("prev %v results", searchLimit),
-			Order: uint32(len(response.Results)) + 4,
-			OnChange: func(key string) {
-				go func() {
-					cursor -= searchLimit
-					resp, err := l.GetVendorSearch(text, searchLimit, cursor)
-					if err != nil {
-						l.logger.Error("GetVendorSearch failed", err)
-					}
-					defer resp.Body.Close()
+		if response.Remaining > 0 {
+			elements["next"] = &ldk.WhisperContentDisambiguationElementOption{
+				Label: fmt.Sprintf("next %v results", searchLimit),
+				Order: uint32(len(response.Results)) + 3,
+				OnChange: func(key string) {
+					go func() {
+						cursor += searchLimit
+						resp, err := l.GetVendorSearch(text, searchLimit, cursor)
+						if err != nil {
+							l.logger.Error("GetVendorSearch failed", err)
+						}
+						defer resp.Body.Close()
 
-					bodyBytes, err := ioutil.ReadAll(resp.Body)
-					if err != nil {
-						l.logger.Error("ioutil.ReadAll failed", err)
-					}
+						bodyBytes, err := ioutil.ReadAll(resp.Body)
+						if err != nil {
+							l.logger.Error("ioutil.ReadAll failed", err)
+						}
 
-					venddy := Venddy{}
+						venddy := Venddy{}
 
-					er := json.Unmarshal(bodyBytes, &venddy)
-					if er != nil {
-						l.logger.Error("json.Unmarshal failed", err)
-					}
+						err = json.Unmarshal(bodyBytes, &venddy)
+						if err != nil {
+							l.logger.Error("json.Unmarshal failed", err)
+						}
 
-					venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
-					venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
-					venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
-					venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
+						venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
+						venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+						venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
+						venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
 
-					_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
-						Label:    "Venddy Search",
-						Elements: l.CreateDisambiguationElements(venddy.Response, text),
-					})
-				}()
-			},
+						_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
+							Label:    "Venddy Search",
+							Elements: l.CreateDisambiguationElements(venddy.Response, text),
+						})
+					}()
+				},
+			}
+		}
+
+		if cursor > 0 {
+			elements["prev"] = &ldk.WhisperContentDisambiguationElementOption{
+				Label: fmt.Sprintf("prev %v results", searchLimit),
+				Order: uint32(len(response.Results)) + 4,
+				OnChange: func(key string) {
+					go func() {
+						cursor -= searchLimit
+						resp, err := l.GetVendorSearch(text, searchLimit, cursor)
+						if err != nil {
+							l.logger.Error("GetVendorSearch failed", err)
+						}
+						defer resp.Body.Close()
+
+						bodyBytes, err := ioutil.ReadAll(resp.Body)
+						if err != nil {
+							l.logger.Error("ioutil.ReadAll failed", err)
+						}
+
+						venddy := Venddy{}
+
+						er := json.Unmarshal(bodyBytes, &venddy)
+						if er != nil {
+							l.logger.Error("json.Unmarshal failed", err)
+						}
+
+						venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
+						venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+						venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
+						venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
+
+						_, _ = l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
+							Label:    "Venddy Search",
+							Elements: l.CreateDisambiguationElements(venddy.Response, text),
+						})
+					}()
+				},
+			}
+		}
+	} else {
+		elements["header1"] = &ldk.WhisperContentDisambiguationElementText{
+			Body:  fmt.Sprintf("# No results for %v, please try another search", text),
+			Order: 0,
 		}
 	}
 

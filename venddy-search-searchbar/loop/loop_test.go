@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	loop "github.com/cameronvoglerolive/venddysearch/venddy-search-searchbar/loop"
 	"github.com/google/go-cmp/cmp"
 	ldk "github.com/open-olive/loop-development-kit/ldk/go"
-	loop "github.com/open-olive/loop-development-kit/ldk/go/examples/search-searchbar/loop"
 	ldktest "github.com/open-olive/loop-development-kit/ldk/go/ldk-test"
 )
 
