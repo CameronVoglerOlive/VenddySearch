@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"strings"
-	"time"
 
 	ldk "github.com/open-olive/loop-development-kit/ldk/go"
 )
@@ -40,7 +37,6 @@ func NewLoop(logger *ldk.Logger) (*Loop, error) {
 	}, nil
 }
 
-var client = &http.Client{Timeout: 10 * time.Second}
 var searchLimit = 10
 var cursor = 0
 
@@ -74,20 +70,10 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 
 				go func() {
 					cursor = 0
-					resp, err := l.GetVendorSearch(text, searchLimit, cursor)
-					if err != nil {
-						log.Fatalln(err)
-					}
-					defer resp.Body.Close()
-
-					bodyBytes, err := ioutil.ReadAll(resp.Body)
-					if err != nil {
-						log.Fatalln(err)
-					}
-
+					resp := l.GetVendorSearch(text, searchLimit, cursor)
 					venddy := Venddy{}
 
-					er := json.Unmarshal(bodyBytes, &venddy)
+					er := json.Unmarshal(resp.Data, &venddy)
 					if er != nil {
 						log.Fatalln(er.Error())
 					}
@@ -136,20 +122,10 @@ func (l *Loop) CreateForm(text string) {
 
 	if isSubmitted == true && vendor != "" {
 		cursor = 0
-		resp, err := l.GetVendorSearch(vendor, searchLimit, cursor)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		defer resp.Body.Close()
-
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
+		resp := l.GetVendorSearch(vendor, searchLimit, cursor)
 		venddy := Venddy{}
 
-		er := json.Unmarshal(bodyBytes, &venddy)
+		er := json.Unmarshal(resp.Data, &venddy)
 		if er != nil {
 			log.Fatalln(er.Error())
 		}
@@ -231,20 +207,10 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 				OnChange: func(key string) {
 					go func() {
 						cursor += searchLimit
-						resp, err := l.GetVendorSearch(text, searchLimit, cursor)
-						if err != nil {
-							l.logger.Error("GetVendorSearch failed", err)
-						}
-						defer resp.Body.Close()
-
-						bodyBytes, err := ioutil.ReadAll(resp.Body)
-						if err != nil {
-							l.logger.Error("ioutil.ReadAll failed", err)
-						}
-
+						resp := l.GetVendorSearch(text, searchLimit, cursor)
 						venddy := Venddy{}
 
-						err = json.Unmarshal(bodyBytes, &venddy)
+						err := json.Unmarshal(resp.Data, &venddy)
 						if err != nil {
 							l.logger.Error("json.Unmarshal failed", err)
 						}
@@ -270,21 +236,11 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 				OnChange: func(key string) {
 					go func() {
 						cursor -= searchLimit
-						resp, err := l.GetVendorSearch(text, searchLimit, cursor)
-						if err != nil {
-							l.logger.Error("GetVendorSearch failed", err)
-						}
-						defer resp.Body.Close()
-
-						bodyBytes, err := ioutil.ReadAll(resp.Body)
-						if err != nil {
-							l.logger.Error("ioutil.ReadAll failed", err)
-						}
-
+						resp := l.GetVendorSearch(text, searchLimit, cursor)
 						venddy := Venddy{}
 
-						er := json.Unmarshal(bodyBytes, &venddy)
-						if er != nil {
+						err := json.Unmarshal(resp.Data, &venddy)
+						if err != nil {
 							l.logger.Error("json.Unmarshal failed", err)
 						}
 
@@ -344,21 +300,21 @@ func CreateListElements(result VenddyResult) map[string]ldk.WhisperContentListEl
 	return elements
 }
 
-func (l *Loop) GetVendorSearch(vendor string, max int, startAt int) (*http.Response, error) {
+func (l *Loop) GetVendorSearch(vendor string, max int, startAt int) *ldk.HTTPResponse {
 	vendor = strings.ReplaceAll(vendor, " ", "+")
-	req, err := http.NewRequest("GET",
-		fmt.Sprintf(`https://venddy.com/api/1.1/obj/vendor?constraints=[{"key":"searchfield", "constraint_type":"text contains", "value":"%v" }]&sort_field=Score&descending=true&limit=%v&cursor=%v`,
+	resp, err := l.sidekick.Network().HTTPRequest(l.ctx, &ldk.HTTPRequest{
+		URL: fmt.Sprintf(`https://venddy.com/api/1.1/obj/vendor?constraints=[{"key":"searchfield", "constraint_type":"text contains", "value":"%v" }]&sort_field=Score&descending=true&limit=%v&cursor=%v`,
 			vendor,
 			max,
 			startAt),
-		nil)
+		Method: "GET",
+		Body:   nil,
+	})
 	if err != nil {
-		l.logger.Error("Vendor GET failed", err)
+		l.logger.Error("HTTPRequest failed", "error", err)
 	}
-	q := req.URL.Query()
-	req.URL.RawQuery = q.Encode()
 
-	return client.Do(req)
+	return resp
 }
 
 func (l *Loop) GetVenddyCategoryNames(results []VenddyResult) []VenddyResult {
