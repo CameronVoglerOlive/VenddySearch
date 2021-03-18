@@ -113,7 +113,8 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 }
 
 func (l *Loop) CreateForm(text string) {
-	isSubmitted, outputs, err := l.sidekick.Whisper().Form(l.ctx, &ldk.WhisperContentForm{
+	var vendor string
+	isSubmitted, _, err := l.sidekick.Whisper().Form(l.ctx, &ldk.WhisperContentForm{
 		Label:       "Venddy Search",
 		Markdown:    "Enter the terms you would like to search for",
 		CancelLabel: "Cancel",
@@ -123,15 +124,14 @@ func (l *Loop) CreateForm(text string) {
 				Label:   "Vendor Search",
 				Tooltip: "Enter the vendor name or services offered",
 				Order:   1,
+				OnChange: func(text string) {
+					vendor = text
+				},
 			},
 		},
 	})
 	if err != nil {
 		l.logger.Error("Form failed", "error", err)
-	}
-	var vendor string
-	if vendorOutput := outputs["vendor"]; vendorOutput.Type() == ldk.WhisperContentFormTypeText {
-		vendor = vendorOutput.(*ldk.WhisperContentFormOutputText).Value
 	}
 
 	if isSubmitted == true && vendor != "" {
