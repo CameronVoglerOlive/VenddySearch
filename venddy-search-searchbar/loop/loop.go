@@ -58,42 +58,117 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 			return
 		}
 
-		go func() {
-			cursor = 0
-			resp, err := l.GetVendorSearch(text, searchLimit, cursor)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			defer resp.Body.Close()
-
-			bodyBytes, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			venddy := Venddy{}
-
-			er := json.Unmarshal(bodyBytes, &venddy)
-			if er != nil {
-				log.Fatalln(er.Error())
-			}
-
-			venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
-			venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
-			venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
-			venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
+		if text == "Venddy" || text == "venddy" {
 
 			go func() {
-				_, err := l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
-					Label:    "Venddy Search",
-					Elements: l.CreateDisambiguationElements(venddy.Response, text),
-				})
-				if err != nil {
-					l.logger.Error("failed to emit whisper", "error", err)
-				}
+				go l.CreateForm(text)
 			}()
-		}()
+		} else {
+			if text[:7] == "venddy:" || text[:7] == "Venddy:" {
+				switch text[:7] {
+				case "venddy:":
+					text = strings.Split(text, "venddy:")[1]
+				case "Venddy:":
+					text = strings.Split(text, "Venddy:")[1]
+				}
+
+				go func() {
+					cursor = 0
+					resp, err := l.GetVendorSearch(text, searchLimit, cursor)
+					if err != nil {
+						log.Fatalln(err)
+					}
+					defer resp.Body.Close()
+
+					bodyBytes, err := ioutil.ReadAll(resp.Body)
+					if err != nil {
+						log.Fatalln(err)
+					}
+
+					venddy := Venddy{}
+
+					er := json.Unmarshal(bodyBytes, &venddy)
+					if er != nil {
+						log.Fatalln(er.Error())
+					}
+
+					venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
+					venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
+
+					go func() {
+						_, err := l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
+							Label:    "Venddy Search",
+							Elements: l.CreateDisambiguationElements(venddy.Response, text),
+						})
+						if err != nil {
+							l.logger.Error("failed to emit whisper", "error", err)
+						}
+					}()
+				}()
+			}
+		}
 	})
+}
+
+func (l *Loop) CreateForm(text string) {
+	isSubmitted, outputs, err := l.sidekick.Whisper().Form(l.ctx, &ldk.WhisperContentForm{
+		Label:       "Venddy Search",
+		Markdown:    "Enter the terms you would like to search for",
+		CancelLabel: "Cancel",
+		SubmitLabel: "Search",
+		Inputs: map[string]ldk.WhisperContentFormInput{
+			"vendor": &ldk.WhisperContentFormInputText{
+				Label:   "Vendor Search",
+				Tooltip: "Enter the vendor name or services offered",
+				Order:   1,
+			},
+		},
+	})
+	if err != nil {
+		l.logger.Error("Form failed", "error", err)
+	}
+	var vendor string
+	if vendorOutput := outputs["vendor"]; vendorOutput.Type() == ldk.WhisperContentFormTypeText {
+		vendor = vendorOutput.(*ldk.WhisperContentFormOutputText).Value
+	}
+
+	if isSubmitted == true && vendor != "" {
+		cursor = 0
+		resp, err := l.GetVendorSearch(vendor, searchLimit, cursor)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		defer resp.Body.Close()
+
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		venddy := Venddy{}
+
+		er := json.Unmarshal(bodyBytes, &venddy)
+		if er != nil {
+			log.Fatalln(er.Error())
+		}
+
+		venddy.Response.Results = l.GetVenddyCategoryNames(venddy.Response.Results)
+		venddy.Response.Results = l.GetVenddyClassNames(venddy.Response.Results)
+		venddy.Response.Results = l.GetVenddySubcategoryNames(venddy.Response.Results)
+		venddy.Response.Results = l.GetVenddyTypeNames(venddy.Response.Results)
+
+		go func() {
+			_, err := l.sidekick.Whisper().Disambiguation(l.ctx, &ldk.WhisperContentDisambiguation{
+				Label:    "Venddy Search",
+				Elements: l.CreateDisambiguationElements(venddy.Response, vendor),
+			})
+			if err != nil {
+				l.logger.Error("failed to emit whisper", "error", err)
+			}
+		}()
+	}
 }
 
 func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string) map[string]ldk.WhisperContentDisambiguationElement {
@@ -145,7 +220,7 @@ func (l *Loop) CreateDisambiguationElements(response VenddyResponse, text string
 		}
 		venddyText := strings.ReplaceAll(text, " ", "+")
 		elements["viewOnVenddy"] = &ldk.WhisperContentDisambiguationElementText{
-			Body:  fmt.Sprintf("https://venddy.com/searchvendor?keyword=%v", venddyText),
+			Body:  fmt.Sprintf("[View on Venddy](https://venddy.com/searchvendor?keyword=%v)", venddyText),
 			Order: uint32(len(response.Results)) + 5,
 		}
 
@@ -270,9 +345,13 @@ func CreateListElements(result VenddyResult) map[string]ldk.WhisperContentListEl
 }
 
 func (l *Loop) GetVendorSearch(vendor string, max int, startAt int) (*http.Response, error) {
+	vendor = strings.ReplaceAll(vendor, " ", "+")
 	req, err := http.NewRequest("GET",
 		fmt.Sprintf(`https://venddy.com/api/1.1/obj/vendor?constraints=[{"key":"searchfield", "constraint_type":"text contains", "value":"%v" }]&sort_field=Score&descending=true&limit=%v&cursor=%v`,
-			vendor, max, startAt), nil)
+			vendor,
+			max,
+			startAt),
+		nil)
 	if err != nil {
 		l.logger.Error("Vendor GET failed", err)
 	}
